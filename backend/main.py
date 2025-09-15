@@ -10,9 +10,8 @@ from datetime import datetime
 import os
 from dotenv import load_dotenv
 
-from livekit import rtc
-import livekit_api
-from livekit_api import AccessToken, VideoGrants, RoomService, CreateRoomRequest, ListParticipantsRequest
+from livekit import rtc, api
+from livekit.api import AccessToken, VideoGrants, RoomService
 
 import openai
 from groq import Groq
