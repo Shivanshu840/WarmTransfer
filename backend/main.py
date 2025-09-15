@@ -10,15 +10,13 @@ from datetime import datetime
 import os
 from dotenv import load_dotenv
 
-# Import LiveKit components
-from livekit import api, rtc
-from livekit.api import AccessToken, VideoGrants
+from livekit import rtc
+import livekit_api
+from livekit_api import AccessToken, VideoGrants, RoomService, CreateRoomRequest, ListParticipantsRequest
 
-# Import LLM integration
 import openai
 from groq import Groq
 
-# Import Twilio (optional)
 try:
     from twilio.rest import Client as TwilioClient
     TWILIO_AVAILABLE = True
@@ -27,13 +25,11 @@ except ImportError:
 
 load_dotenv()
 
-# Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Warm Transfer API", version="1.0.0")
 
-# CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
@@ -42,7 +38,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Global state management
 class TransferManager:
     def __init__(self):
         self.active_calls: Dict[str, dict] = {}
@@ -80,21 +75,17 @@ class TransferManager:
 
 transfer_manager = TransferManager()
 
-# LiveKit configuration
 LIVEKIT_API_KEY = os.getenv("LIVEKIT_API_KEY")
 LIVEKIT_API_SECRET = os.getenv("LIVEKIT_API_SECRET")
 LIVEKIT_WS_URL = os.getenv("LIVEKIT_WS_URL", "ws://localhost:7880")
 
-# LLM configuration
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
-# Twilio configuration (optional)
 TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")
 TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
 TWILIO_PHONE_NUMBER = os.getenv("TWILIO_PHONE_NUMBER")
 
-# Initialize clients
 if OPENAI_API_KEY:
     openai.api_key = OPENAI_API_KEY
 
@@ -106,13 +97,12 @@ if TWILIO_AVAILABLE and TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN:
 
 class LiveKitService:
     def __init__(self):
-        self.room_service = api.RoomService()
+        self.room_service = RoomService(LIVEKIT_API_KEY, LIVEKIT_API_SECRET, url=LIVEKIT_WS_URL)
         
     async def create_room(self, room_name: str) -> dict:
-        """Create a new LiveKit room"""
         try:
             room = await self.room_service.create_room(
-                api.CreateRoomRequest(name=room_name)
+                CreateRoomRequest(name=room_name)
             )
             return {"room_name": room.name, "sid": room.sid}
         except Exception as e:
@@ -120,7 +110,6 @@ class LiveKitService:
             raise HTTPException(status_code=500, detail=f"Failed to create room: {str(e)}")
     
     def generate_token(self, room_name: str, participant_name: str) -> str:
-        """Generate access token for LiveKit room"""
         token = AccessToken(LIVEKIT_API_KEY, LIVEKIT_API_SECRET)
         token.with_identity(participant_name)
         token.with_name(participant_name)
@@ -133,10 +122,9 @@ class LiveKitService:
         return token.to_jwt()
     
     async def list_participants(self, room_name: str) -> List[dict]:
-        """List participants in a room"""
         try:
             participants = await self.room_service.list_participants(
-                api.ListParticipantsRequest(room=room_name)
+                ListParticipantsRequest(room=room_name)
             )
             return [{"identity": p.identity, "name": p.name} for p in participants]
         except Exception as e:
@@ -150,13 +138,11 @@ class LLMService:
         self.call_contexts: Dict[str, List[str]] = {}
     
     def add_context(self, session_id: str, message: str):
-        """Add context to call session"""
         if session_id not in self.call_contexts:
             self.call_contexts[session_id] = []
         self.call_contexts[session_id].append(message)
     
     async def generate_call_summary(self, session_id: str) -> str:
-        """Generate call summary using LLM"""
         if session_id not in self.call_contexts:
             return "No call context available"
         
@@ -164,7 +150,6 @@ class LLMService:
         
         try:
             if GROQ_API_KEY:
-                # Use Groq for fast inference
                 response = groq_client.chat.completions.create(
                     model="llama-3.1-8b-instant",
                     messages=[
@@ -183,7 +168,6 @@ class LLMService:
                 return response.choices[0].message.content
             
             elif OPENAI_API_KEY:
-                # Fallback to OpenAI
                 response = openai.ChatCompletion.create(
                     model="gpt-3.5-turbo",
                     messages=[
@@ -210,30 +194,24 @@ class LLMService:
 
 llm_service = LLMService()
 
-# API Routes
 @app.get("/")
 async def root():
     return {"message": "Warm Transfer API is running"}
 
 @app.post("/api/create-call")
 async def create_call(request: dict):
-    """Create a new call session"""
     try:
         caller_id = request.get("caller_id", f"caller_{uuid.uuid4().hex[:8]}")
         room_name = f"call_{uuid.uuid4().hex[:8]}"
         
-        # Create LiveKit room
         room_info = await livekit_service.create_room(room_name)
         
-        # Create call session
         session_id = transfer_manager.create_call_session(caller_id, room_name)
         
-        # Generate tokens
         caller_token = livekit_service.generate_token(room_name, caller_id)
         agent_a_id = f"agent_a_{uuid.uuid4().hex[:8]}"
         agent_token = livekit_service.generate_token(room_name, agent_a_id)
         
-        # Assign agent A
         transfer_manager.assign_agent_a(session_id, agent_a_id)
         
         return {
@@ -251,7 +229,6 @@ async def create_call(request: dict):
 
 @app.post("/api/initiate-transfer")
 async def initiate_transfer(request: dict):
-    """Initiate warm transfer to Agent B"""
     try:
         session_id = request.get("session_id")
         agent_b_id = request.get("agent_b_id", f"agent_b_{uuid.uuid4().hex[:8]}")
@@ -259,17 +236,13 @@ async def initiate_transfer(request: dict):
         if not session_id or session_id not in transfer_manager.active_calls:
             raise HTTPException(status_code=404, detail="Call session not found")
         
-        # Generate call summary
         summary = await llm_service.generate_call_summary(session_id)
         transfer_manager.active_calls[session_id]["call_summary"] = summary
         
-        # Create transfer room
         transfer_room = transfer_manager.initiate_transfer(session_id, agent_b_id)
         
-        # Create transfer room in LiveKit
         await livekit_service.create_room(transfer_room)
         
-        # Generate tokens for transfer room
         agent_a_transfer_token = livekit_service.generate_token(
             transfer_room, 
             transfer_manager.active_calls[session_id]["agent_a"]
@@ -290,7 +263,6 @@ async def initiate_transfer(request: dict):
 
 @app.post("/api/complete-transfer")
 async def complete_transfer(request: dict):
-    """Complete the warm transfer"""
     try:
         session_id = request.get("session_id")
         
@@ -301,10 +273,8 @@ async def complete_transfer(request: dict):
         original_room = call_session["room_name"]
         agent_b_id = call_session["agent_b"]
         
-        # Generate token for Agent B to join original room
         agent_b_original_token = livekit_service.generate_token(original_room, agent_b_id)
         
-        # Update session status
         transfer_manager.active_calls[session_id]["status"] = "transferred"
         
         return {
@@ -320,7 +290,6 @@ async def complete_transfer(request: dict):
 
 @app.post("/api/add-context")
 async def add_context(request: dict):
-    """Add context to call session"""
     try:
         session_id = request.get("session_id")
         message = request.get("message")
@@ -338,16 +307,13 @@ async def add_context(request: dict):
 
 @app.get("/api/call-status/{session_id}")
 async def get_call_status(session_id: str):
-    """Get call session status"""
     if session_id not in transfer_manager.active_calls:
         raise HTTPException(status_code=404, detail="Call session not found")
     
     return transfer_manager.active_calls[session_id]
 
-# Optional Twilio integration
 @app.post("/api/twilio-transfer")
 async def twilio_transfer(request: dict):
-    """Transfer call to external phone number via Twilio"""
     if not TWILIO_AVAILABLE or not twilio_client:
         raise HTTPException(status_code=501, detail="Twilio integration not configured")
     
@@ -361,10 +327,8 @@ async def twilio_transfer(request: dict):
         if not phone_number:
             raise HTTPException(status_code=400, detail="Phone number required")
         
-        # Generate call summary
         summary = await llm_service.generate_call_summary(session_id)
         
-        # Create Twilio call
         call = twilio_client.calls.create(
             to=phone_number,
             from_=TWILIO_PHONE_NUMBER,
