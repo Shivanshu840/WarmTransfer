@@ -79,6 +79,11 @@ class TransferManager:
         
         return transfer_room
 
+    def end_call(self, session_id: str):
+        if session_id in self.active_calls:
+            self.active_calls[session_id]["status"] = "ended"
+            self.active_calls[session_id]["ended_at"] = datetime.now()
+
 transfer_manager = TransferManager()
 
 # LiveKit configuration
@@ -176,6 +181,14 @@ class LiveKitService:
         except Exception as e:
             logger.error(f"Failed to list participants: {e}")
             return []
+
+    async def delete_room(self, room_name: str):
+        """Delete a LiveKit room"""
+        try:
+            if self.room_service:
+                await self.room_service.delete_room(api.DeleteRoomRequest(room=room_name))
+        except Exception as e:
+            logger.error(f"Failed to delete room: {e}")
 
 livekit_service = LiveKitService()
 
@@ -388,6 +401,50 @@ async def get_call_status(session_id: str):
         raise HTTPException(status_code=404, detail="Call session not found")
     
     return transfer_manager.active_calls[session_id]
+
+@app.post("/api/end-call")
+async def end_call(request: dict):
+    """End a call session"""
+    try:
+        session_id = request.get("session_id")
+        
+        if not session_id or session_id not in transfer_manager.active_calls:
+            raise HTTPException(status_code=404, detail="Call session not found")
+        
+        call_session = transfer_manager.active_calls[session_id]
+        room_name = call_session["room_name"]
+        
+        transfer_manager.end_call(session_id)
+        
+        if livekit_service.room_service:
+            try:
+                # End the room - this will disconnect all participants
+                await livekit_service.delete_room(room_name)
+                logger.info(f"LiveKit room {room_name} deleted successfully")
+            except Exception as e:
+                logger.warning(f"Failed to delete LiveKit room {room_name}: {e}")
+        
+        transfer_room = call_session.get("transfer_room")
+        if transfer_room and livekit_service.room_service:
+            try:
+                await livekit_service.delete_room(transfer_room)
+                logger.info(f"Transfer room {transfer_room} deleted successfully")
+            except Exception as e:
+                logger.warning(f"Failed to delete transfer room {transfer_room}: {e}")
+        
+        if session_id in llm_service.call_contexts:
+            del llm_service.call_contexts[session_id]
+        
+        return {
+            "message": "Call ended successfully",
+            "session_id": session_id,
+            "room_name": room_name,
+            "status": "ended"
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to end call: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 # Optional Twilio integration
 @app.post("/api/twilio-transfer")
