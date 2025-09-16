@@ -24,6 +24,8 @@ try:
 except ImportError:
     TWILIO_AVAILABLE = False
 
+import httpx
+
 load_dotenv()
 
 # Configure logging
@@ -35,7 +37,7 @@ app = FastAPI(title="Warm Transfer API", version="1.0.0")
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:3001", "*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -83,6 +85,7 @@ transfer_manager = TransferManager()
 LIVEKIT_API_KEY = os.getenv("LIVEKIT_API_KEY")
 LIVEKIT_API_SECRET = os.getenv("LIVEKIT_API_SECRET")
 LIVEKIT_WS_URL = os.getenv("LIVEKIT_WS_URL", "ws://localhost:7880")
+LIVEKIT_HTTP_URL = os.getenv("LIVEKIT_HTTP_URL", "http://localhost:7880")
 
 # LLM configuration
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
@@ -116,7 +119,14 @@ class LiveKitService:
             try:
                 self.api_key = LIVEKIT_API_KEY
                 self.api_secret = LIVEKIT_API_SECRET
-                self.url = LIVEKIT_WS_URL.replace('ws://', 'http://').replace('wss://', 'https://')
+                self.url = LIVEKIT_HTTP_URL
+                self.session = httpx.AsyncClient()
+                self.room_service = api.room_service.RoomService(
+                    session=self.session,
+                    url=self.url,
+                    api_key=self.api_key,
+                    api_secret=self.api_secret
+                )
             except Exception as e:
                 logger.error(f"Failed to initialize LiveKit config: {e}")
                 self.room_service = None
@@ -124,23 +134,14 @@ class LiveKitService:
     async def create_room(self, room_name: str) -> dict:
         """Create a new LiveKit room"""
         try:
-            if not self.api_key or not self.api_secret:
+            if not self.room_service:
                 # For development, return mock room info
                 logger.warning("LiveKit not configured, returning mock room")
                 return {"room_name": room_name, "sid": f"mock_sid_{uuid.uuid4().hex[:8]}"}
             
-            import httpx
-            async with httpx.AsyncClient() as session:
-                room_service = api.room_service.RoomService(
-                    session=session,
-                    url=self.url,
-                    api_key=self.api_key,
-                    api_secret=self.api_secret
-                )
-                
-                room_request = api.CreateRoomRequest(name=room_name)
-                room = await room_service.create_room(room_request)
-                return {"room_name": room.name, "sid": room.sid}
+            room_request = api.CreateRoomRequest(name=room_name)
+            room = await self.room_service.create_room(room_request)
+            return {"room_name": room.name, "sid": room.sid}
                 
         except Exception as e:
             logger.error(f"Failed to create room: {e}")
@@ -401,25 +402,45 @@ async def twilio_transfer(request: dict):
         if not phone_number:
             raise HTTPException(status_code=400, detail="Phone number required")
         
+        if not TWILIO_PHONE_NUMBER:
+            raise HTTPException(status_code=500, detail="Twilio phone number not configured")
+        
         # Generate call summary
         summary = await llm_service.generate_call_summary(session_id)
         
-        # Create Twilio call
-        call = twilio_client.calls.create(
-            to=phone_number,
-            from_=TWILIO_PHONE_NUMBER,
-            twiml=f'<Response><Say>Incoming warm transfer. Call summary: {summary}</Say><Dial>{phone_number}</Dial></Response>'
-        )
+        try:
+            call = twilio_client.calls.create(
+                to=phone_number,
+                from_=TWILIO_PHONE_NUMBER,
+                twiml=f'<Response><Say>Incoming warm transfer. Call summary: {summary}</Say><Dial>{phone_number}</Dial></Response>'
+            )
+            
+            return {
+                "twilio_call_sid": call.sid,
+                "call_summary": summary,
+                "message": "Twilio transfer initiated"
+            }
+        except Exception as twilio_error:
+            logger.error(f"Twilio API error: {twilio_error}")
+            raise HTTPException(status_code=400, detail=f"Twilio error: {str(twilio_error)}")
         
-        return {
-            "twilio_call_sid": call.sid,
-            "call_summary": summary,
-            "message": "Twilio transfer initiated"
-        }
-        
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Failed to initiate Twilio transfer: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+# Health check endpoint for debugging
+@app.get("/api/health")
+async def health_check():
+    """Health check endpoint"""
+    return {
+        "status": "healthy",
+        "livekit_configured": bool(LIVEKIT_API_KEY and LIVEKIT_API_SECRET),
+        "twilio_configured": bool(TWILIO_AVAILABLE and TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN),
+        "livekit_url": LIVEKIT_WS_URL,
+        "active_calls": len(transfer_manager.active_calls)
+    }
 
 if __name__ == "__main__":
     import uvicorn
