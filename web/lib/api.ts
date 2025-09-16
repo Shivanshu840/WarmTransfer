@@ -1,53 +1,124 @@
-import axios from "axios"
-
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
-
-const api = axios.create({
-  baseURL: API_BASE_URL,
-  headers: {
-    "Content-Type": "application/json",
-  },
-})
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000"
 
 export const apiService = {
-  // Create a new call session
-  createCall: async (data: { caller_id: string }) => {
-    const response = await api.post("/api/create-call", data)
-    return response.data
-  },
-
-  // Initiate warm transfer
-  initiateTransfer: async (data: { session_id: string; agent_b_id: string }) => {
-    const response = await api.post("/api/initiate-transfer", data)
-    return response.data
-  },
-
-  // Complete the transfer
-  completeTransfer: async (data: { session_id: string }) => {
-    const response = await api.post("/api/complete-transfer", data)
-    return response.data
-  },
-
-  // Add context to call
-  addContext: async (session_id: string, message: string) => {
-    const response = await api.post("/api/add-context", {
-      session_id,
-      message,
+  createCall: async (data: { caller_id: string; room_name?: string }) => {
+    const response = await fetch(`${BACKEND_URL}/api/create-call`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(data),
     })
-    return response.data
+
+    if (!response.ok) {
+      throw new Error(`Failed to create call: ${response.statusText}`)
+    }
+
+    return response.json()
   },
 
-  // Get call status
-  getCallStatus: async (session_id: string) => {
-    const response = await api.get(`/api/call-status/${session_id}`)
-    return response.data
+  addContext: async (sessionId: string, context: string) => {
+    const response = await fetch(`${BACKEND_URL}/api/add-context`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        session_id: sessionId,
+        message: context,
+      }),
+    })
+
+    if (!response.ok) {
+      throw new Error(`Failed to add context: ${response.statusText}`)
+    }
+
+    return response.json()
   },
 
-  // Twilio transfer (optional)
+  initiateTransfer: async (data: { session_id: string; agent_b_id: string }) => {
+    const response = await fetch(`${BACKEND_URL}/api/initiate-transfer`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(data),
+    })
+
+    if (!response.ok) {
+      throw new Error(`Failed to initiate transfer: ${response.statusText}`)
+    }
+
+    return response.json()
+  },
+
+  completeTransfer: async (data: { session_id: string }) => {
+    const response = await fetch(`${BACKEND_URL}/api/complete-transfer`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(data),
+    })
+
+    if (!response.ok) {
+      throw new Error(`Failed to complete transfer: ${response.statusText}`)
+    }
+
+    return response.json()
+  },
+
   twilioTransfer: async (data: { session_id: string; phone_number: string }) => {
-    const response = await api.post("/api/twilio-transfer", data)
-    return response.data
+    const response = await fetch(`${BACKEND_URL}/api/twilio-transfer`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(data),
+    })
+
+    if (!response.ok) {
+      throw new Error(`Failed to initiate Twilio transfer: ${response.statusText}`)
+    }
+
+    return response.json()
+  },
+
+  getCallStatus: async (sessionId: string) => {
+    const response = await fetch(`${BACKEND_URL}/api/call-status/${sessionId}`)
+
+    if (!response.ok) {
+      throw new Error(`Failed to get call status: ${response.statusText}`)
+    }
+
+    return response.json()
+  },
+
+  healthCheck: async () => {
+    const response = await fetch(`${BACKEND_URL}/api/health`)
+
+    if (!response.ok) {
+      throw new Error(`Backend health check failed: ${response.statusText}`)
+    }
+
+    return response.json()
+  },
+
+  endCall: async (sessionId: string) => {
+    const response = await fetch(`${BACKEND_URL}/api/end-call`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        session_id: sessionId,
+      }),
+    })
+
+    if (!response.ok) {
+      throw new Error(`Failed to end call: ${response.statusText}`)
+    }
+
+    return response.json()
   },
 }
-
-export default api
