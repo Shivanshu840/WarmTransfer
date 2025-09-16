@@ -6,11 +6,7 @@ import { Input } from "./ui/Input"
 import { Card } from "./ui/Card"
 import { ArrowRightLeft, User, Phone, CheckCircle } from "lucide-react"
 import { apiService } from "../lib/api"
-
-interface CallData {
-  session_id?: string
-  [key: string]: unknown
-}
+import type { CallSession, TransferState } from "../types"
 
 interface TransferResponse {
   call_summary?: string
@@ -18,9 +14,9 @@ interface TransferResponse {
 }
 
 interface TransferPanelProps {
-  activeCall: CallData | null
-  transferState: "idle" | "initiating" | "active" | "completed"
-  onTransferStateChange: (state: "idle" | "initiating" | "active" | "completed") => void
+  activeCall: CallSession | null
+  transferState: TransferState
+  onTransferStateChange: (state: TransferState) => void
 }
 
 export function TransferPanel({ activeCall, transferState, onTransferStateChange }: TransferPanelProps) {

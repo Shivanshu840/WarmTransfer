@@ -5,7 +5,7 @@ import { CallInterface } from "../components/CallInterface"
 import { TransferPanel } from "../components/TransferPanel"
 import { CallStatus as CallStatusComponent } from "../components/CallStatus"
 import { Phone, Users, ArrowRightLeft } from "lucide-react"
-import type { CallSession, TransferState } from "../types" // adjust import path
+import type { CallSession, TransferState } from "../types"
 
 export default function Home() {
   const [activeCall, setActiveCall] = useState<CallSession | null>(null)
@@ -14,9 +14,7 @@ export default function Home() {
   return (
     <main className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800">
       <div className="container mx-auto px-4 py-8">
-        <h1 className="mb-8 text-center text-4xl font-bold text-gray-900 dark:text-white">
-          Call Transfer System
-        </h1>
+        <h1 className="mb-8 text-center text-4xl font-bold text-gray-900 dark:text-white">Call Transfer System</h1>
 
         <div className="grid gap-8 md:grid-cols-2">
           {/* Call Interface */}
@@ -28,6 +26,7 @@ export default function Home() {
             <CallInterface
               onCallStart={setActiveCall}
               onCallEnd={() => setActiveCall(null)}
+              onTransferStateChange={setTransferState}
             />
           </div>
 
@@ -40,7 +39,7 @@ export default function Home() {
             <TransferPanel
               activeCall={activeCall}
               transferState={transferState}
-              setTransferState={setTransferState}
+              onTransferStateChange={setTransferState}
             />
           </div>
         </div>
@@ -51,10 +50,7 @@ export default function Home() {
             <Users className="h-5 w-5" />
             Call Status
           </div>
-          <CallStatusComponent
-            activeCall={activeCall}
-            transferState={transferState}
-          />
+          <CallStatusComponent activeCall={activeCall} transferState={transferState} />
         </div>
       </div>
     </main>

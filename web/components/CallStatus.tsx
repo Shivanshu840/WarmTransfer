@@ -1,20 +1,14 @@
 "use client"
 import { Badge } from "./ui/Badge"
 import { Clock, User, Phone, ArrowRightLeft } from "lucide-react"
-
-interface CallData {
-  session_id?: string
-  room_name?: string
-  agent_id?: string
-  ws_url?: string
-}
+import type { CallSession, TransferState } from "../types"
 
 interface CallStatusProps {
-  callData: CallData
-  transferState: "idle" | "initiating" | "active" | "completed"
+  activeCall: CallSession | null
+  transferState: TransferState
 }
 
-export function CallStatus({ callData, transferState }: CallStatusProps) {
+export function CallStatus({ activeCall, transferState }: CallStatusProps) {
   const getStatusColor = (state: string) => {
     switch (state) {
       case "idle":
@@ -49,69 +43,57 @@ export function CallStatus({ callData, transferState }: CallStatusProps) {
     <div className="space-y-4">
       {/* Transfer Status */}
       <div className="flex items-center justify-between">
-        <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-          Transfer Status
-        </span>
-        <Badge className={getStatusColor(transferState)}>
-          {getStatusText(transferState)}
-        </Badge>
+        <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Transfer Status</span>
+        <Badge className={getStatusColor(transferState)}>{getStatusText(transferState)}</Badge>
       </div>
 
       {/* Call Details */}
-      <div className="space-y-3">
-        <div className="flex items-center gap-3">
-          <User className="w-4 h-4 text-gray-500" />
-          <div>
-            <p className="text-sm font-medium text-gray-900 dark:text-white">
-              Session ID
-            </p>
-            <p className="text-xs text-gray-600 dark:text-gray-400 font-mono">
-              {callData.session_id?.slice(0, 8)}...
-            </p>
+      {activeCall && (
+        <div className="space-y-3">
+          <div className="flex items-center gap-3">
+            <User className="w-4 h-4 text-gray-500" />
+            <div>
+              <p className="text-sm font-medium text-gray-900 dark:text-white">Session ID</p>
+              <p className="text-xs text-gray-600 dark:text-gray-400 font-mono">
+                {activeCall.session_id?.slice(0, 8)}...
+              </p>
+            </div>
           </div>
-        </div>
 
-        <div className="flex items-center gap-3">
-          <Phone className="w-4 h-4 text-gray-500" />
-          <div>
-            <p className="text-sm font-medium text-gray-900 dark:text-white">
-              Room Name
-            </p>
-            <p className="text-xs text-gray-600 dark:text-gray-400 font-mono">
-              {callData.room_name}
-            </p>
+          <div className="flex items-center gap-3">
+            <Phone className="w-4 h-4 text-gray-500" />
+            <div>
+              <p className="text-sm font-medium text-gray-900 dark:text-white">Room Name</p>
+              <p className="text-xs text-gray-600 dark:text-gray-400 font-mono">{activeCall.room_name}</p>
+            </div>
           </div>
-        </div>
 
-        <div className="flex items-center gap-3">
-          <ArrowRightLeft className="w-4 h-4 text-gray-500" />
-          <div>
-            <p className="text-sm font-medium text-gray-900 dark:text-white">
-              Agent ID
-            </p>
-            <p className="text-xs text-gray-600 dark:text-gray-400 font-mono">
-              {callData.agent_id?.slice(0, 12)}...
-            </p>
+          <div className="flex items-center gap-3">
+            <ArrowRightLeft className="w-4 h-4 text-gray-500" />
+            <div>
+              <p className="text-sm font-medium text-gray-900 dark:text-white">Agent ID</p>
+              <p className="text-xs text-gray-600 dark:text-gray-400 font-mono">
+                {activeCall.agent_id?.slice(0, 12)}...
+              </p>
+            </div>
           </div>
-        </div>
 
-        <div className="flex items-center gap-3">
-          <Clock className="w-4 h-4 text-gray-500" />
-          <div>
-            <p className="text-sm font-medium text-gray-900 dark:text-white">
-              Connection
-            </p>
-            <p className="text-xs text-green-600 dark:text-green-400">Active</p>
+          <div className="flex items-center gap-3">
+            <Clock className="w-4 h-4 text-gray-500" />
+            <div>
+              <p className="text-sm font-medium text-gray-900 dark:text-white">Connection</p>
+              <p className="text-xs text-green-600 dark:text-green-400">Active</p>
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       {/* Connection Info */}
-      <div className="pt-3 border-t border-gray-200 dark:border-gray-700">
-        <p className="text-xs text-gray-500 dark:text-gray-400">
-          WebSocket: {callData.ws_url}
-        </p>
-      </div>
+      {activeCall && (
+        <div className="pt-3 border-t border-gray-200 dark:border-gray-700">
+          <p className="text-xs text-gray-500 dark:text-gray-400">WebSocket: {activeCall.ws_url}</p>
+        </div>
+      )}
     </div>
   )
 }
