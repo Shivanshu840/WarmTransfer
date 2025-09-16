@@ -24,7 +24,7 @@ try:
 except ImportError:
     TWILIO_AVAILABLE = False
 
-import httpx
+import requests
 
 load_dotenv()
 
@@ -120,9 +120,7 @@ class LiveKitService:
                 self.api_key = LIVEKIT_API_KEY
                 self.api_secret = LIVEKIT_API_SECRET
                 self.url = LIVEKIT_HTTP_URL
-                self.session = httpx.AsyncClient()
                 self.room_service = api.room_service.RoomService(
-                    session=self.session,
                     url=self.url,
                     api_key=self.api_key,
                     api_secret=self.api_secret
@@ -258,13 +256,19 @@ async def root():
 
 @app.post("/api/create-call")
 async def create_call(request: dict):
-    """Create a new call session"""
+    """Create a new call session or join existing room"""
     try:
         caller_id = request.get("caller_id", f"caller_{uuid.uuid4().hex[:8]}")
-        room_name = f"call_{uuid.uuid4().hex[:8]}"
+        room_name = request.get("room_name")
         
-        # Create LiveKit room
-        room_info = await livekit_service.create_room(room_name)
+        if not room_name:
+            # Create new room if no room_name provided
+            room_name = f"call_{uuid.uuid4().hex[:8]}"
+            # Create LiveKit room
+            room_info = await livekit_service.create_room(room_name)
+        else:
+            # Join existing room - no need to create it again
+            room_info = {"room_name": room_name, "sid": f"existing_{room_name}"}
         
         # Create call session
         session_id = transfer_manager.create_call_session(caller_id, room_name)
