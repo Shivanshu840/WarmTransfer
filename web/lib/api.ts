@@ -17,7 +17,7 @@ export const apiService = {
     return response.json()
   },
 
-  addContext: async (sessionId: string, context: string) => {
+  addContext: async (sessionId: string, context: string, speaker = "Agent") => {
     const response = await fetch(`${BACKEND_URL}/api/add-context`, {
       method: "POST",
       headers: {
@@ -26,6 +26,7 @@ export const apiService = {
       body: JSON.stringify({
         session_id: sessionId,
         message: context,
+        speaker: speaker,
       }),
     })
 

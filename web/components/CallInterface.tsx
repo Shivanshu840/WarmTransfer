@@ -91,6 +91,16 @@ export function CallInterface({ onCallStart, onTransferStateChange, onCallEnd }:
       setCallDuration(0)
       onTransferStateChange("idle")
 
+      try {
+        await apiService.addContext(
+          response.session_id,
+          `Call started with customer: ${callerName.trim()}. Customer has joined the room and is ready to speak with Agent A.`,
+          "System",
+        )
+      } catch (contextError) {
+        console.warn("[v0] Failed to add call start context:", contextError)
+      }
+
       console.log("[v0] Successfully connected to LiveKit room:", response.room_name)
     } catch (error) {
       console.error("[v0] Failed to start call:", error)
@@ -106,8 +116,9 @@ export function CallInterface({ onCallStart, onTransferStateChange, onCallEnd }:
     if (callData?.room_name) {
       try {
         await navigator.clipboard.writeText(callData.room_name)
-        
+        alert("Room ID copied to clipboard!")
       } catch (error) {
+        console.error("[v0] Failed to copy room ID:", error)
         alert(`Room ID: ${callData.room_name}`)
       }
     }
@@ -164,6 +175,16 @@ export function CallInterface({ onCallStart, onTransferStateChange, onCallEnd }:
       setShowJoinRoom(false)
       setRoomIdToJoin("")
 
+      try {
+        await apiService.addContext(
+          response.session_id,
+          `${callerName.trim()} has joined existing room ${roomIdToJoin.trim()}. Customer is now connected and ready to continue the conversation.`,
+          "System",
+        )
+      } catch (contextError) {
+        console.warn("[v0] Failed to add join room context:", contextError)
+      }
+
       console.log("[v0] Successfully joined LiveKit room:", roomIdToJoin)
     } catch (error) {
       console.error("[v0] Failed to join room:", error)
@@ -178,6 +199,16 @@ export function CallInterface({ onCallStart, onTransferStateChange, onCallEnd }:
   const endCall = useCallback(async () => {
     try {
       if (callData?.session_id) {
+        try {
+          await apiService.addContext(
+            callData.session_id,
+            `Call ended by customer ${callerName}. Customer has disconnected from the room.`,
+            "System",
+          )
+        } catch (contextError) {
+          console.warn("[v0] Failed to add call end context:", contextError)
+        }
+
         await apiService.endCall(callData.session_id)
       }
 
@@ -202,7 +233,7 @@ export function CallInterface({ onCallStart, onTransferStateChange, onCallEnd }:
     onCallStart(null)
     onTransferStateChange("idle")
     onCallEnd?.()
-  }, [callData, audioTrack, onCallStart, onTransferStateChange, onCallEnd])
+  }, [callData, audioTrack, onCallStart, onTransferStateChange, onCallEnd, callerName])
 
   const toggleMute = useCallback(async () => {
     if (audioTrack) {

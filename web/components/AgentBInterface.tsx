@@ -163,6 +163,7 @@ export function AgentBInterface({ onJoinTransfer, onJoinCustomerCall }: AgentBIn
       await newRoom.localParticipant.publishTrack(track, {
         name: "microphone",
         source: Track.Source.Microphone,
+        audioBitrate: 20_000,
       })
 
       setCustomerRoom(newRoom)
@@ -170,8 +171,20 @@ export function AgentBInterface({ onJoinTransfer, onJoinCustomerCall }: AgentBIn
       setCallDuration(0)
 
       console.log("[v0] Successfully connected to customer room:", originalRoom)
+
+      try {
+        await apiService.addContext(
+          originalRoom,
+          "Agent B has joined the call and is now handling the customer",
+          "System",
+        )
+      } catch (contextError) {
+        console.warn("[v0] Failed to add context:", contextError)
+      }
     } catch (error) {
       console.error("[v0] Failed to connect to customer room:", error)
+      setConnectionStatus("listening")
+      alert(`Failed to connect to customer room: ${error instanceof Error ? error.message : "Unknown error"}`)
     }
 
     onJoinCustomerCall(originalRoom, customerToken)
@@ -191,6 +204,14 @@ export function AgentBInterface({ onJoinTransfer, onJoinCustomerCall }: AgentBIn
 
   const leaveCustomerCall = async () => {
     try {
+      if (originalRoom) {
+        try {
+          await apiService.addContext(originalRoom, "Agent B has left the call", "System")
+        } catch (contextError) {
+          console.warn("[v0] Failed to add context:", contextError)
+        }
+      }
+
       if (customerRoom) {
         await customerRoom.disconnect()
         setCustomerRoom(null)
