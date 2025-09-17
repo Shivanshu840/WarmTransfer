@@ -385,11 +385,28 @@ async def complete_transfer(request: dict):
         # Update session status
         transfer_manager.active_calls[session_id]["status"] = "transferred"
         
+        completion_notification = {
+            "type": "transfer_completed",
+            "session_id": session_id,
+            "agent_b_id": agent_b_id,
+            "original_room": original_room,
+            "customer_token": agent_b_original_token,
+            "timestamp": datetime.now().isoformat(),
+            "message": f"Transfer completed! Join customer room: {original_room}"
+        }
+        
+        # Store completion notification for Agent B
+        if agent_b_id not in transfer_manager.notifications:
+            transfer_manager.notifications[agent_b_id] = []
+        
+        transfer_manager.notifications[agent_b_id].append(completion_notification)
+        
         return {
             "agent_b_original_token": agent_b_original_token,
             "original_room": original_room,
             "ws_url": LIVEKIT_WS_URL,
-            "message": "Transfer completed successfully"
+            "message": "Transfer completed successfully",
+            "notification_sent": True
         }
         
     except Exception as e:
