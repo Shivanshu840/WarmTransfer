@@ -351,9 +351,9 @@ export function AgentBInterface({ onJoinTransfer, onJoinCustomerCall }: AgentBIn
         setCustomerAudioTrack(null)
       }
 
-      if (originalRoom) {
-        await apiService.endCall(originalRoom)
-      }
+      // Note: Don't call apiService.endCall() here because Agent B doesn't have the session_id
+      // The call will continue for other participants (customer) or be ended by them
+      // Agent B is just leaving, not ending the entire call
 
       setConnectionStatus("listening")
       setOriginalRoom("")
