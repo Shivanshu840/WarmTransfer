@@ -49,6 +49,7 @@ class TransferManager:
         self.active_calls: Dict[str, dict] = {}
         self.agents: Dict[str, dict] = {}
         self.transfer_sessions: Dict[str, dict] = {}
+        self.notifications: Dict[str, List[dict]] = {}
         
     def create_call_session(self, caller_id: str, room_name: str) -> str:
         session_id = str(uuid.uuid4())
@@ -60,7 +61,8 @@ class TransferManager:
             "status": "active",
             "created_at": datetime.now(),
             "call_summary": "",
-            "transfer_room": None
+            "transfer_room": None,
+            "agent_a_exited": False
         }
         return session_id
     
@@ -189,6 +191,16 @@ class LiveKitService:
                 await self.room_service.delete_room(api.DeleteRoomRequest(room=room_name))
         except Exception as e:
             logger.error(f"Failed to delete room: {e}")
+
+    async def remove_participant(self, room_name: str, participant_id: str):
+        """Remove a participant from a LiveKit room"""
+        try:
+            if self.room_service:
+                await self.room_service.remove_participant(
+                    api.RoomParticipantIdentity(room=room_name, identity=participant_id)
+                )
+        except Exception as e:
+            logger.error(f"Failed to remove participant: {e}")
 
 livekit_service = LiveKitService()
 
@@ -334,6 +346,14 @@ async def initiate_transfer(request: dict):
         )
         agent_b_transfer_token = livekit_service.generate_token(transfer_room, agent_b_id)
         
+        # Notify Agent B about the transfer
+        await notify_agent_b({
+            "session_id": session_id,
+            "agent_b_id": agent_b_id,
+            "transfer_room": transfer_room,
+            "agent_b_token": agent_b_transfer_token
+        })
+        
         return {
             "transfer_room": transfer_room,
             "agent_a_transfer_token": agent_a_transfer_token,
@@ -445,6 +465,87 @@ async def end_call(request: dict):
     except Exception as e:
         logger.error(f"Failed to end call: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/agent-exit-room")
+async def agent_exit_room(request: dict):
+    """Remove Agent A from original room after transfer completion"""
+    try:
+        session_id = request.get("session_id")
+        agent_id = request.get("agent_id")
+        
+        if not session_id or session_id not in transfer_manager.active_calls:
+            raise HTTPException(status_code=404, detail="Call session not found")
+        
+        call_session = transfer_manager.active_calls[session_id]
+        room_name = call_session["room_name"]
+        
+        # Remove Agent A from customer room
+        if livekit_service.room_service:
+            try:
+                # Remove participant from room
+                await livekit_service.remove_participant(room_name, agent_id)
+                logger.info(f"Agent {agent_id} removed from room {room_name}")
+            except Exception as e:
+                logger.warning(f"Failed to remove agent from room: {e}")
+        
+        # Update session to mark Agent A as exited
+        call_session["agent_a_exited"] = True
+        
+        return {
+            "message": f"Agent {agent_id} exited room successfully",
+            "room_name": room_name,
+            "session_id": session_id
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to remove agent from room: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/notify-agent-b")
+async def notify_agent_b(request: dict):
+    """Notify Agent B about incoming transfer (webhook/notification endpoint)"""
+    try:
+        session_id = request.get("session_id")
+        agent_b_id = request.get("agent_b_id")
+        transfer_room = request.get("transfer_room")
+        agent_b_token = request.get("agent_b_token")
+        
+        # In a real system, this would send notifications via WebSocket, email, or push notifications
+        notification_data = {
+            "type": "transfer_request",
+            "session_id": session_id,
+            "agent_b_id": agent_b_id,
+            "transfer_room": transfer_room,
+            "agent_b_token": agent_b_token,
+            "timestamp": datetime.now().isoformat(),
+            "message": f"Incoming warm transfer from Agent A. Join transfer room: {transfer_room}"
+        }
+        
+        # Store notification for Agent B to poll/retrieve
+        if agent_b_id not in transfer_manager.notifications:
+            transfer_manager.notifications[agent_b_id] = []
+        
+        transfer_manager.notifications[agent_b_id].append(notification_data)
+        
+        return {
+            "message": "Agent B notified successfully",
+            "notification": notification_data
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to notify Agent B: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/notifications/{agent_id}")
+async def get_notifications(agent_id: str):
+    """Get pending notifications for an agent"""
+    notifications = transfer_manager.notifications.get(agent_id, [])
+    
+    # Clear notifications after retrieving
+    if agent_id in transfer_manager.notifications:
+        transfer_manager.notifications[agent_id] = []
+    
+    return {"notifications": notifications}
 
 # Optional Twilio integration
 @app.post("/api/twilio-transfer")
