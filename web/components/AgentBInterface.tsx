@@ -105,15 +105,123 @@ export function AgentBInterface({ onJoinTransfer, onJoinCustomerCall }: AgentBIn
           const completionNotification = response.notifications.find((n: any) => n.type === "transfer_completed")
           if (completionNotification) {
             console.log("[v0] Transfer completed notification received:", completionNotification)
-            setOriginalRoom(completionNotification.original_room)
-            setCustomerToken(completionNotification.customer_token)
-
-            setTimeout(async () => {
+            // Fix: Check if notification has the required data before setting state
+            const roomName = completionNotification.original_room
+            const token = completionNotification.customer_token
+            
+            if (roomName && token) {
+              console.log("[v0] Starting automatic connection to customer room...")
+              setOriginalRoom(roomName)
+              setCustomerToken(token)
               setConnectionStatus("with_customer")
-              await handleJoinCustomerCall()
-            }, 500)
+              
+              // Clear the processed notification immediately
+              setNotifications((prev) => prev.filter((n) => n.session_id !== completionNotification.session_id))
+              
+              // Automatically join the customer call with the received data
+              setTimeout(async () => {
+                try {
+                  console.log("[v0] Attempting to connect to customer room:", roomName)
+                  
+                  // Disconnect any existing room first
+                  if (customerRoom) {
+                    try {
+                      await customerRoom.disconnect()
+                      console.log("[v0] Disconnected existing room")
+                    } catch (e) {
+                      console.warn("[v0] Error disconnecting existing room:", e)
+                    }
+                  }
 
-            setNotifications((prev) => prev.filter((n) => n.session_id !== completionNotification.session_id))
+                  // Stop any existing audio track
+                  if (customerAudioTrack) {
+                    try {
+                      customerAudioTrack.stop()
+                      console.log("[v0] Stopped existing audio track")
+                    } catch (e) {
+                      console.warn("[v0] Error stopping existing track:", e)
+                    }
+                  }
+
+                  const newRoom = new Room()
+                  
+                  // Set up room event listeners before connecting
+                  newRoom.on('connected', () => {
+                    console.log("[v0] Room connected successfully")
+                  })
+                  
+                  newRoom.on('disconnected', (reason) => {
+                    console.log("[v0] Room disconnected, reason:", reason)
+                    // Reset state when room is disconnected
+                    setConnectionStatus("listening")
+                    setCustomerRoom(null)
+                    if (customerAudioTrack) {
+                      customerAudioTrack.stop()
+                      setCustomerAudioTrack(null)
+                    }
+                  })
+
+                  // Create audio track
+                  const track = await createLocalAudioTrack({
+                    echoCancellation: true,
+                    noiseSuppression: true,
+                    autoGainControl: true,
+                  })
+                  console.log("[v0] Created audio track successfully")
+
+                  // Connect to room
+                  await newRoom.connect(process.env.NEXT_PUBLIC_LIVEKIT_URL || "ws://localhost:7880", token, {
+                    autoSubscribe: true,
+                  })
+                  console.log("[v0] Connected to LiveKit room successfully")
+
+                  // Wait for connection to stabilize before publishing
+                  await new Promise(resolve => setTimeout(resolve, 2000))
+
+                  // Publish audio track
+                  await newRoom.localParticipant.publishTrack(track, {
+                    name: "microphone",
+                    source: Track.Source.Microphone,
+                  })
+                  console.log("[v0] Published audio track successfully")
+
+                  setCustomerRoom(newRoom)
+                  setCustomerAudioTrack(track)
+                  setCallDuration(0)
+                  setIsMuted(false)
+
+                  console.log("[v0] Successfully connected to customer room:", roomName)
+
+                  try {
+                    await apiService.addContext(
+                      roomName,
+                      "Agent B has joined the call and is now handling the customer",
+                      "System",
+                    )
+                  } catch (contextError) {
+                    console.warn("[v0] Failed to add context:", contextError)
+                  }
+
+                  onJoinCustomerCall(roomName, token)
+                } catch (error) {
+                  console.error("[v0] Failed to connect to customer room:", error)
+                  setConnectionStatus("listening")
+                  setOriginalRoom("")
+                  setCustomerToken("")
+
+                  const errorMessage = error instanceof Error ? error.message : "Unknown error"
+                  alert(
+                    `Failed to connect to customer room: ${errorMessage}\n\nRoom: ${roomName}\nThis may happen if the customer has already ended the call.`,
+                  )
+                }
+              }, 2000)
+            } else {
+              console.error("[v0] Completion notification missing required data:", {
+                has_original_room: !!roomName,
+                has_customer_token: !!token,
+                notification: completionNotification
+              })
+            }
           }
         }
       } catch (error) {
@@ -148,6 +256,15 @@ export function AgentBInterface({ onJoinTransfer, onJoinCustomerCall }: AgentBIn
     console.log("[v0] Joining customer call")
     setConnectionStatus("with_customer")
 
+    // Fix: Check if we have the required data before attempting connection
+    if (!originalRoom || !customerToken) {
+      const errorMsg = `[v0] Missing connection data: originalRoom=${originalRoom}, hasToken=${!!customerToken}`
+      console.error(errorMsg)
+      alert("Missing connection data. Please try again.")
+      setConnectionStatus("listening")
+      return
+    }
+
     try {
       const newRoom = new Room()
       const track = await createLocalAudioTrack({
@@ -164,19 +281,14 @@ export function AgentBInterface({ onJoinTransfer, onJoinCustomerCall }: AgentBIn
       )
 
       await newRoom.connect(process.env.NEXT_PUBLIC_LIVEKIT_URL || "ws://localhost:7880", customerToken, {
-  autoSubscribe: true,
-})
-
-await newRoom.localParticipant.publishTrack(track, {
-  name: "microphone",
-  source: Track.Source.Microphone,
-  dtx: false,
-  red: false,
-})
+        autoSubscribe: true,
+      })
 
       await newRoom.localParticipant.publishTrack(track, {
         name: "microphone",
         source: Track.Source.Microphone,
+        dtx: false,
+        red: false,
       })
 
       setCustomerRoom(newRoom)
@@ -306,11 +418,19 @@ await newRoom.localParticipant.publishTrack(track, {
               setNotifications([])
               setPollError(null)
               setDebugInfo(`Switched to agent: ${agentId}`)
+              // Reset connection state if stuck
+              if (connectionStatus !== "with_customer") {
+                setConnectionStatus("listening")
+                setOriginalRoom("")
+                setCustomerToken("")
+                setTransferRoom("")
+                setAgentBToken("")
+              }
             }}
             variant="outline"
             size="sm"
           >
-            Update
+            {connectionStatus !== "listening" ? "Reset" : "Update"}
           </Button>
         </div>
         <p className="text-xs text-gray-500 mt-1">
@@ -323,7 +443,7 @@ await newRoom.localParticipant.publishTrack(track, {
           <div className="flex items-center gap-2 mb-3">
             <Bell className="w-5 h-5 text-orange-600 animate-bounce" />
             <h3 className="font-semibold text-orange-900 dark:text-orange-100">
-              🔔 Incoming Transfer Requests ({notifications.length})
+              ðŸ"" Incoming Transfer Requests ({notifications.length})
             </h3>
           </div>
 
@@ -393,73 +513,8 @@ await newRoom.localParticipant.publishTrack(track, {
           </div>
         </div>
 
-        <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Step 1: Join Transfer Room (Private briefing with Agent A)
-            </label>
-            <div className="space-y-2">
-              <Input
-                placeholder="Transfer Room ID"
-                value={transferRoom}
-                onChange={(e) => setTransferRoom(e.target.value)}
-              />
-              <Input placeholder="Agent B Token" value={agentBToken} onChange={(e) => setAgentBToken(e.target.value)} />
-              <Button
-                onClick={() => {
-                  setConnectionStatus("in_transfer")
-                  onJoinTransfer(transferRoom, agentBToken)
-                }}
-                disabled={!transferRoom || !agentBToken}
-                className="w-full"
-              >
-                Join Transfer Room
-              </Button>
-            </div>
-          </div>
-
-          <div className="border-t pt-4">
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Step 2: Join Customer Call (After briefing)
-            </label>
-            {connectionStatus === "with_customer" && originalRoom && customerToken ? (
-              <div className="bg-green-50 dark:bg-green-900/20 p-4 rounded-lg border border-green-200 dark:border-green-800">
-                <div className="flex items-center gap-2 mb-2">
-                  <CheckCircle className="w-5 h-5 text-green-600" />
-                  <span className="font-medium text-green-900 dark:text-green-100">🎉 Connected to Customer!</span>
-                </div>
-                <p className="text-sm text-green-800 dark:text-green-200">
-                  You're now connected to room: {originalRoom}
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                <Input
-                  placeholder="Original Room ID"
-                  value={originalRoom}
-                  onChange={(e) => setOriginalRoom(e.target.value)}
-                />
-                <Input
-                  placeholder="Customer Token"
-                  value={customerToken}
-                  onChange={(e) => setCustomerToken(e.target.value)}
-                />
-                <Button
-                  onClick={handleJoinCustomerCall}
-                  disabled={!originalRoom || !customerToken}
-                  className="w-full bg-green-600 hover:bg-green-700"
-                >
-                  <ArrowRight className="w-4 h-4 mr-2" />
-                  Join Customer Call
-                </Button>
-              </div>
-            )}
-          </div>
-        </div>
-      </Card>
-
-      {connectionStatus === "with_customer" && (
-        <Card className="p-6 bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800">
+        {connectionStatus === "with_customer" ? (
+          // Customer call active view
           <div className="text-center">
             <div className="w-16 h-16 bg-green-100 dark:bg-green-900 rounded-full flex items-center justify-center mx-auto mb-4">
               <Phone className="w-8 h-8 text-green-600" />
@@ -503,8 +558,61 @@ await newRoom.localParticipant.publishTrack(track, {
               </Button>
             </div>
           </div>
-        </Card>
-      )}
+        ) : (
+          // Default transfer joining view
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Step 1: Join Transfer Room (Private briefing with Agent A)
+              </label>
+              <div className="space-y-2">
+                <Input
+                  placeholder="Transfer Room ID"
+                  value={transferRoom}
+                  onChange={(e) => setTransferRoom(e.target.value)}
+                />
+                <Input placeholder="Agent B Token" value={agentBToken} onChange={(e) => setAgentBToken(e.target.value)} />
+                <Button
+                  onClick={() => {
+                    setConnectionStatus("in_transfer")
+                    onJoinTransfer(transferRoom, agentBToken)
+                  }}
+                  disabled={!transferRoom || !agentBToken}
+                  className="w-full"
+                >
+                  Join Transfer Room
+                </Button>
+              </div>
+            </div>
+
+            <div className="border-t pt-4">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Step 2: Join Customer Call (After briefing)
+              </label>
+              <div className="space-y-2">
+                <Input
+                  placeholder="Original Room ID"
+                  value={originalRoom}
+                  onChange={(e) => setOriginalRoom(e.target.value)}
+                />
+                <Input
+                  placeholder="Customer Token"
+                  value={customerToken}
+                  onChange={(e) => setCustomerToken(e.target.value)}
+                />
+                <Button
+                  onClick={handleJoinCustomerCall}
+                  disabled={!originalRoom || !customerToken}
+                  className="w-full bg-green-600 hover:bg-green-700"
+                >
+                  <ArrowRight className="w-4 h-4 mr-2" />
+                  Join Customer Call
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+      </Card>
 
       <Card className="p-4 bg-blue-50 dark:bg-blue-900/20">
         <h4 className="font-medium text-blue-900 dark:text-blue-100 mb-2">How Transfer Works:</h4>
