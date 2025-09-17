@@ -4,8 +4,22 @@ import { useState, useEffect } from "react"
 import { Button } from "./ui/Button"
 import { Input } from "./ui/Input"
 import { Card } from "./ui/Card"
-import { Users, ArrowRight, Bell, CheckCircle, AlertCircle, Phone, PhoneCall } from "lucide-react"
+import {
+  Users,
+  ArrowRight,
+  Bell,
+  CheckCircle,
+  AlertCircle,
+  Phone,
+  PhoneCall,
+  PhoneOff,
+  Mic,
+  MicOff,
+  Volume2,
+} from "lucide-react"
 import { apiService } from "../lib/api"
+import { AudioInterface } from "./AudioInterace"
+import { Room, Track, type LocalAudioTrack, createLocalAudioTrack } from "livekit-client"
 
 interface AgentBInterfaceProps {
   onJoinTransfer: (transferRoom: string, agentBToken: string) => void
@@ -36,6 +50,28 @@ export function AgentBInterface({ onJoinTransfer, onJoinCustomerCall }: AgentBIn
   const [lastPollTime, setLastPollTime] = useState<Date | null>(null)
   const [pollError, setPollError] = useState<string | null>(null)
   const [debugInfo, setDebugInfo] = useState<string>("")
+  const [customerRoom, setCustomerRoom] = useState<Room | null>(null)
+  const [customerAudioTrack, setCustomerAudioTrack] = useState<LocalAudioTrack | null>(null)
+  const [isMuted, setIsMuted] = useState(false)
+  const [callDuration, setCallDuration] = useState(0)
+
+  const handleDismissNotification = (sessionId: string) => {
+    setNotifications((prev) => prev.filter((n) => n.session_id !== sessionId))
+  }
+
+  useEffect(() => {
+    let interval: NodeJS.Timeout
+    if (connectionStatus === "with_customer") {
+      interval = setInterval(() => {
+        setCallDuration((prev) => prev + 1)
+      }, 1000)
+    } else {
+      setCallDuration(0)
+    }
+    return () => {
+      if (interval) clearInterval(interval)
+    }
+  }, [connectionStatus])
 
   useEffect(() => {
     let interval: NodeJS.Timeout
@@ -53,7 +89,6 @@ export function AgentBInterface({ onJoinTransfer, onJoinCustomerCall }: AgentBIn
         if (response.notifications && response.notifications.length > 0) {
           console.log("[v0] New notifications received:", response.notifications.length)
           setNotifications((prev) => {
-            // Avoid duplicates by checking session_id
             const existingIds = prev.map((n) => n.session_id)
             const newNotifications = response.notifications.filter(
               (n: TransferNotification) => !existingIds.includes(n.session_id),
@@ -61,7 +96,6 @@ export function AgentBInterface({ onJoinTransfer, onJoinCustomerCall }: AgentBIn
             return [...prev, ...newNotifications]
           })
 
-          // Auto-fill the latest transfer notification
           const latestTransfer = response.notifications.find((n: TransferNotification) => n.type === "transfer_request")
           if (latestTransfer) {
             setTransferRoom(latestTransfer.transfer_room)
@@ -73,12 +107,12 @@ export function AgentBInterface({ onJoinTransfer, onJoinCustomerCall }: AgentBIn
             console.log("[v0] Transfer completed notification received:", completionNotification)
             setOriginalRoom(completionNotification.original_room)
             setCustomerToken(completionNotification.customer_token)
-            setConnectionStatus("with_customer")
 
-            // Auto-connect to customer room
-            onJoinCustomerCall(completionNotification.original_room, completionNotification.customer_token)
+            setTimeout(async () => {
+              setConnectionStatus("with_customer")
+              await handleJoinCustomerCall()
+            }, 500)
 
-            // Remove the completion notification from display
             setNotifications((prev) => prev.filter((n) => n.session_id !== completionNotification.session_id))
           }
         }
@@ -91,16 +125,14 @@ export function AgentBInterface({ onJoinTransfer, onJoinCustomerCall }: AgentBIn
     }
 
     if (isPolling) {
-      // Poll every 2 seconds for new notifications
       interval = setInterval(pollNotifications, 2000)
-      // Initial poll
       pollNotifications()
     }
 
     return () => {
       if (interval) clearInterval(interval)
     }
-  }, [agentId, isPolling, onJoinCustomerCall])
+  }, [agentId, isPolling])
 
   const handleAcceptTransfer = (notification: TransferNotification) => {
     console.log("[v0] Accepting transfer:", notification)
@@ -109,18 +141,86 @@ export function AgentBInterface({ onJoinTransfer, onJoinCustomerCall }: AgentBIn
     setConnectionStatus("in_transfer")
     onJoinTransfer(notification.transfer_room, notification.agent_b_token)
 
-    // Remove this notification
     setNotifications((prev) => prev.filter((n) => n.session_id !== notification.session_id))
   }
 
-  const handleJoinCustomerCall = () => {
+  const handleJoinCustomerCall = async () => {
     console.log("[v0] Joining customer call")
     setConnectionStatus("with_customer")
+
+    try {
+      const newRoom = new Room()
+      const track = await createLocalAudioTrack({
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      })
+
+      await newRoom.connect(process.env.NEXT_PUBLIC_LIVEKIT_URL || "ws://localhost:7880", customerToken, {
+        autoSubscribe: true,
+      })
+
+      await newRoom.localParticipant.publishTrack(track, {
+        name: "microphone",
+        source: Track.Source.Microphone,
+      })
+
+      setCustomerRoom(newRoom)
+      setCustomerAudioTrack(track)
+      setCallDuration(0)
+
+      console.log("[v0] Successfully connected to customer room:", originalRoom)
+    } catch (error) {
+      console.error("[v0] Failed to connect to customer room:", error)
+    }
+
     onJoinCustomerCall(originalRoom, customerToken)
   }
 
-  const handleDismissNotification = (sessionId: string) => {
-    setNotifications((prev) => prev.filter((n) => n.session_id !== sessionId))
+  const toggleMute = async () => {
+    if (customerAudioTrack) {
+      if (isMuted) {
+        await customerAudioTrack.unmute()
+      } else {
+        await customerAudioTrack.mute()
+      }
+    }
+    setIsMuted((prev) => !prev)
+    console.log(`[v0] Agent B microphone ${!isMuted ? "muted" : "unmuted"}`)
+  }
+
+  const leaveCustomerCall = async () => {
+    try {
+      if (customerRoom) {
+        await customerRoom.disconnect()
+        setCustomerRoom(null)
+      }
+
+      if (customerAudioTrack) {
+        customerAudioTrack.stop()
+        setCustomerAudioTrack(null)
+      }
+
+      if (originalRoom) {
+        await apiService.endCall(originalRoom)
+      }
+
+      setConnectionStatus("listening")
+      setOriginalRoom("")
+      setCustomerToken("")
+      setCallDuration(0)
+      setIsMuted(false)
+
+      console.log("[v0] Agent B left customer call")
+    } catch (error) {
+      console.error("[v0] Error leaving customer call:", error)
+    }
+  }
+
+  const formatDuration = (seconds: number) => {
+    const mins = Math.floor(seconds / 60)
+    const secs = seconds % 60
+    return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`
   }
 
   const getStatusColor = () => {
@@ -319,6 +419,54 @@ export function AgentBInterface({ onJoinTransfer, onJoinCustomerCall }: AgentBIn
           </div>
         </div>
       </Card>
+
+      {connectionStatus === "with_customer" && (
+        <Card className="p-6 bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800">
+          <div className="text-center">
+            <div className="w-16 h-16 bg-green-100 dark:bg-green-900 rounded-full flex items-center justify-center mx-auto mb-4">
+              <Phone className="w-8 h-8 text-green-600" />
+            </div>
+            <h3 className="text-xl font-semibold text-green-900 dark:text-green-100 mb-2">Customer Call Active</h3>
+            <p className="text-green-800 dark:text-green-200 mb-4">
+              You're now connected to the customer. Agent A can leave the call.
+            </p>
+
+            <div className="bg-white dark:bg-gray-800 rounded-lg p-3 mb-4 max-w-md mx-auto">
+              <p className="text-sm text-gray-600 dark:text-gray-300 mb-1">Room: {originalRoom}</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">Duration: {formatDuration(callDuration)}</p>
+            </div>
+
+            <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4 mb-4">
+              <div className="flex items-center justify-center mb-2">
+                <Volume2 className="w-5 h-5 text-green-600 mr-2" />
+                <span className="text-sm text-gray-600 dark:text-gray-300">Voice Connection Active</span>
+              </div>
+              <AudioInterface room={customerRoom} />
+            </div>
+
+            <div className="flex justify-center gap-4">
+              <Button onClick={toggleMute} variant={isMuted ? "destructive" : "outline"} size="lg">
+                {isMuted ? (
+                  <>
+                    <MicOff className="w-4 h-4 mr-2" />
+                    Unmute
+                  </>
+                ) : (
+                  <>
+                    <Mic className="w-4 h-4 mr-2" />
+                    Mute
+                  </>
+                )}
+              </Button>
+
+              <Button onClick={leaveCustomerCall} variant="destructive" size="lg">
+                <PhoneOff className="w-4 h-4 mr-2" />
+                Leave Call
+              </Button>
+            </div>
+          </div>
+        </Card>
+      )}
 
       <Card className="p-4 bg-blue-50 dark:bg-blue-900/20">
         <h4 className="font-medium text-blue-900 dark:text-blue-100 mb-2">How Transfer Works:</h4>
