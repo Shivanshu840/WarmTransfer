@@ -121,4 +121,51 @@ export const apiService = {
 
     return response.json()
   },
+
+  notifyAgentB: async (data: {
+    session_id: string
+    agent_b_id: string
+    transfer_room: string
+    agent_b_token: string
+  }) => {
+    const response = await fetch(`${BACKEND_URL}/api/notify-agent-b`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(data),
+    })
+
+    if (!response.ok) {
+      throw new Error(`Failed to notify Agent B: ${response.statusText}`)
+    }
+
+    return response.json()
+  },
+
+  agentExitRoom: async (data: { session_id: string; agent_id: string }) => {
+    const response = await fetch(`${BACKEND_URL}/api/agent-exit-room`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(data),
+    })
+
+    if (!response.ok) {
+      throw new Error(`Failed to exit room: ${response.statusText}`)
+    }
+
+    return response.json()
+  },
+
+  getNotifications: async (agentId: string) => {
+    const response = await fetch(`${BACKEND_URL}/api/notifications/${agentId}`)
+
+    if (!response.ok) {
+      throw new Error(`Failed to get notifications: ${response.statusText}`)
+    }
+
+    return response.json()
+  },
 }

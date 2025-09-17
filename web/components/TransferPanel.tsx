@@ -10,6 +10,8 @@ import type { CallSession, TransferState } from "../types"
 
 interface TransferResponse {
   call_summary?: string
+  transfer_room?: string
+  agent_b_transfer_token?: string
   [key: string]: unknown
 }
 
@@ -64,12 +66,34 @@ export function TransferPanel({ activeCall, transferState, onTransferStateChange
         session_id: activeCall.session_id,
       })
 
+      // Notify Agent B about the transfer
+      if (transferData && agentBName) {
+        await apiService.notifyAgentB({
+          session_id: activeCall.session_id,
+          agent_b_id: agentBName,
+          transfer_room: (transferData as any).transfer_room,
+          agent_b_token: (transferData as any).agent_b_transfer_token,
+        })
+      }
+
       onTransferStateChange("completed")
+
+      // Optional: Auto-exit Agent A from customer room after a delay
+      setTimeout(async () => {
+        try {
+          await apiService.agentExitRoom({
+            session_id: activeCall.session_id,
+            agent_id: activeCall.agent_id,
+          })
+        } catch (error) {
+          console.error("Failed to exit room:", error)
+        }
+      }, 5000) // 5 second delay to ensure Agent B has joined
     } catch (error) {
       console.error("Failed to complete transfer:", error)
       alert("Failed to complete transfer. Please try again.")
     }
-  }, [activeCall, onTransferStateChange])
+  }, [activeCall, onTransferStateChange, transferData, agentBName])
 
   const twilioTransfer = useCallback(async () => {
     if (!activeCall?.session_id || !phoneNumber.trim()) {
