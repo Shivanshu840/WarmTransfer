@@ -1,403 +1,358 @@
-# Warm Transfer Application with LiveKit and LLM Integration
+# Warm Transfer Application
 
 A comprehensive warm transfer system that enables seamless call handoffs between agents with AI-powered context sharing using LiveKit, LLM integration, and optional Twilio support.
 
-## 🚀 Features
+## Setup Instructions
 
-- **Real-time Communication**: LiveKit-powered audio calls with low latency
-- **Warm Transfer**: Seamless agent-to-agent handoffs with context preservation
-- **AI-Powered Summaries**: LLM-generated call summaries for better context sharing
-- **Interactive UI**: Modern Next.js interface for call management
-- **Optional Twilio Integration**: Support for external phone number transfers
-- **Multi-Agent Support**: Handle multiple concurrent calls and transfers
+### Prerequisites and API Keys
 
-## 🏗️ Architecture
+Before running the application, obtain API keys from the following services:
 
-\`\`\`
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   Frontend      │    │   Backend       │    │   LiveKit       │
-│   (Next.js)     │◄──►│   (FastAPI)     │◄──►│   Server        │
-│                 │    │                 │    │                 │
-│ - Call Interface│    │ - Room Mgmt     │    │ - Audio Rooms   │
-│ - Transfer UI   │    │ - Transfer Logic│    │ - Participants  │
-│ - Status Display│    │ - LLM Integration│   │ - Token Auth    │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
-                              │
-                              ▼
-                    ┌─────────────────┐
-                    │   LLM Service   │
-                    │ (OpenAI/Groq)   │
-                    │                 │
-                    │ - Call Summaries│
-                    │ - Context Gen   │
-                    └─────────────────┘
-                              │
-                              ▼
-                    ┌─────────────────┐
-                    │   Twilio API    │
-                    │   (Optional)    │
-                    │                 │
-                    │ - Phone Calls   │
-                    │ - SIP Support   │
-                    └─────────────────┘
-\`\`\`
+#### Required Services
 
-## 🔄 Warm Transfer Flow
+**1. LiveKit (Required for real-time audio)**
+- Sign up at [livekit.io](https://livekit.io)
+- Create a new project
+- Navigate to Settings → Keys
+- Copy your API Key and API Secret
+- Note your WebSocket URL (typically starts with `wss://`)
 
-1. **Initial Call**: Customer connects to Agent A via LiveKit room
-2. **Context Building**: Agent A gathers customer information and context
-3. **Transfer Initiation**: Agent A decides to transfer and creates transfer room
-4. **AI Summary**: LLM generates call summary from collected context
-5. **Agent Briefing**: Agent A joins transfer room with Agent B and shares summary
-6. **Transfer Completion**: Agent A leaves original room, Agent B takes over
-7. **Optional Extension**: Transfer to external phone via Twilio
+**2. LLM Provider (Required for AI summaries)**
 
-## 📋 Prerequisites
+Choose one of these options:
 
-Before running the application, you need to obtain API keys from the following services:
+**Option A: Groq (Recommended for speed)**
+- Create account at [console.groq.com](https://console.groq.com)
+- Go to API Keys section
+- Generate new API key
+- Copy the key (starts with `gsk_`)
 
-### Required Services
+**Option B: OpenAI**
+- Create account at [platform.openai.com](https://platform.openai.com)
+- Navigate to API Keys
+- Create new secret key
+- Copy the key (starts with `sk-`)
 
-1. **LiveKit** (Required)
-   - Sign up at [livekit.io](https://livekit.io)
-   - Create a project and get API Key & Secret
-   - Note your WebSocket URL
+#### Optional Services
 
-2. **LLM Provider** (Choose one)
-   - **Groq** (Recommended for speed): [console.groq.com](https://console.groq.com)
-   - **OpenAI**: [platform.openai.com](https://platform.openai.com)
+**3. Twilio (Optional - for external phone transfers)**
+- Sign up at [twilio.com](https://twilio.com)
+- Get Account SID from Console Dashboard
+- Get Auth Token from Console Dashboard
+- Purchase or get a trial phone number
+- Verify destination phone numbers (required for trial accounts)
 
-### Optional Services
+### Installation
 
-3. **Twilio** (Optional - for phone integration)
-   - Sign up at [twilio.com](https://twilio.com)
-   - Get Account SID, Auth Token, and Phone Number
-
-## 🛠️ Installation & Setup
-
-### 1. Clone the Repository
-
-\`\`\`bash
+**1. Clone Repository**
+```bash
 git clone <repository-url>
 cd warm-transfer-app
-\`\`\`
+```
 
-### 2. Backend Setup
-
-\`\`\`bash
+**2. Backend Setup**
+```bash
 cd backend
 
 # Create virtual environment
 python -m venv venv
 
 # Activate virtual environment
-# On Windows:
+# Windows:
 venv\Scripts\activate
-# On macOS/Linux:
+# macOS/Linux:
 source venv/bin/activate
 
 # Install dependencies
 pip install -r requirements.txt
 
-# Copy environment file and configure
+# Create environment file
 cp .env.example .env
-# Edit .env with your API keys (see configuration section below)
-\`\`\`
+```
 
-### 3. Frontend Setup
-
-\`\`\`bash
-cd frontend
-
-# Install dependencies
-npm install
-
-# Copy environment file and configure
-cp .env.local.example .env.local
-# Edit .env.local with your configuration
-\`\`\`
-
-### 4. LiveKit Server Setup
-
-You have two options for running LiveKit:
-
-#### Option A: Docker (Recommended)
-\`\`\`bash
-docker run --rm \
-  -p 7880:7880 \
-  -p 7881:7881 \
-  -p 7882:7882/udp \
-  livekit/livekit-server \
-  --dev
-\`\`\`
-
-#### Option B: Binary Installation
-1. Download from [github.com/livekit/livekit/releases](https://github.com/livekit/livekit/releases)
-2. Run: `./livekit-server --dev`
-
-## ⚙️ Configuration
-
-### Backend Configuration (.env)
-
-\`\`\`env
+**3. Configure Backend Environment (.env)**
+```env
 # LiveKit Configuration (Required)
 LIVEKIT_API_KEY=your_livekit_api_key_here
 LIVEKIT_API_SECRET=your_livekit_api_secret_here
 LIVEKIT_WS_URL=ws://localhost:7880
+LIVEKIT_HTTP_URL=http://localhost:7880
 
-# LLM Configuration (Choose one or both)
-# Groq API Key (Recommended for faster inference)
+# LLM Configuration (Choose one)
+# Groq API Key (Recommended)
 GROQ_API_KEY=your_groq_api_key_here
 
-# OpenAI API Key
+# OR OpenAI API Key
 OPENAI_API_KEY=your_openai_api_key_here
 
 # Twilio Configuration (Optional)
-TWILIO_ACCOUNT_SID=your_twilio_account_sid_here
-TWILIO_AUTH_TOKEN=your_twilio_auth_token_here
-TWILIO_PHONE_NUMBER=your_twilio_phone_number_here
+TWILIO_ACCOUNT_SID=your_twilio_account_sid
+TWILIO_AUTH_TOKEN=your_twilio_auth_token
+TWILIO_PHONE_NUMBER=+15551234567
 
-# API Configuration
+# Server Configuration
 API_HOST=0.0.0.0
 API_PORT=8000
-FRONTEND_URL=http://localhost:3000
-\`\`\`
+```
 
-### Frontend Configuration (.env.local)
+**4. Web Client Setup**
+```bash
+cd web
 
-\`\`\`env
-# Frontend Configuration
+# Install dependencies
+npm install
+
+# Create environment file
+cp .env.local.example .env.local
+```
+
+**5. Configure Web Client Environment (.env.local)**
+```env
+# API Configuration
 NEXT_PUBLIC_API_URL=http://localhost:8000
 
-# LiveKit Configuration (for client-side)
-NEXT_PUBLIC_LIVEKIT_WS_URL=ws://localhost:7880
-\`\`\`
+# LiveKit Configuration
+NEXT_PUBLIC_LIVEKIT_URL=ws://localhost:7880
+```
 
-## 🚀 Running the Application
+**6. LiveKit Server Setup**
 
-### 1. Start LiveKit Server
-\`\`\`bash
-# Using Docker
+You need to run a LiveKit server locally for development:
+
+**Option A: Docker (Recommended)**
+```bash
 docker run --rm \
   -p 7880:7880 \
   -p 7881:7881 \
   -p 7882:7882/udp \
   livekit/livekit-server \
   --dev
-\`\`\`
+```
 
-### 2. Start Backend Server
-\`\`\`bash
+**Option B: Binary Installation**
+1. Download from [github.com/livekit/livekit/releases](https://github.com/livekit/livekit/releases)
+2. Extract and run: `./livekit-server --dev`
+
+## How to Run Services
+
+### Start All Services (Required Order)
+
+**1. Start LiveKit Server (First)**
+```bash
+# In a separate terminal
+docker run --rm \
+  -p 7880:7880 \
+  -p 7881:7881 \
+  -p 7882:7882/udp \
+  livekit/livekit-server \
+  --dev
+```
+Leave this running. You should see output indicating the server is ready.
+
+**2. Start Backend API Server (Second)**
+```bash
+# In backend directory
 cd backend
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+source venv/bin/activate  # Windows: venv\Scripts\activate
 python main.py
-\`\`\`
-Backend will be available at: http://localhost:8000
+```
 
-### 3. Start Frontend Server
-\`\`\`bash
-cd frontend
+You should see:
+```
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8000
+```
+
+**3. Start Web Application (Third)**
+```bash
+# In web directory
+cd web
 npm run dev
-\`\`\`
-Frontend will be available at: http://localhost:3000
+```
 
-## 📱 Usage Instructions
+You should see:
+```
+Ready - started server on 0.0.0.0:3000
+```
 
-### Basic Call Flow
+### Access Points
 
-1. **Start a Call**
+- **Customer/Agent A Interface:** http://localhost:3000
+- **Agent B Dashboard:** http://localhost:3000/agent-b
+- **Backend API:** http://localhost:8000
+- **API Health Check:** http://localhost:8000/api/health
+
+### Verification Steps
+
+1. **Check Backend Health:**
+   ```bash
+   curl http://localhost:8000/api/health
+   ```
+   Should return status "healthy"
+
+2. **Test Web Application:**
    - Open http://localhost:3000
-   - Enter your name as the caller
-   - Click "Start Call" to connect with Agent A
+   - Should see "Call Transfer System" interface
 
-2. **Simulate Agent A**
-   - The system automatically creates Agent A
-   - Audio connection is established via LiveKit
+3. **Test Agent B Dashboard:**
+   - Open http://localhost:3000/agent-b
+   - Should see "Agent B Dashboard"
 
-3. **Initiate Transfer**
-   - In the Transfer Panel, enter "Agent B" name
-   - Click "Initiate Transfer"
-   - System creates transfer room and generates AI summary
+## Detailed Warm Transfer Workflow
 
-4. **Complete Transfer**
-   - Agent A and Agent B are now in transfer room
-   - AI summary is shared for context
-   - Click "Complete Transfer" to move Agent B to original room
+### Overview
 
-### Optional Twilio Integration
+The warm transfer process allows Agent A to seamlessly hand off a customer call to Agent B with full context preservation. Here's how it works step by step:
 
-1. **Configure Twilio**
-   - Add Twilio credentials to backend .env
-   - Ensure you have a verified phone number
+### Phase 1: Initial Customer Contact
 
-2. **Transfer to Phone**
-   - Enter phone number in "Transfer to Phone" section
-   - Click "Transfer via Twilio"
-   - System will call the number and share AI summary
+**1. Customer Initiates Call**
+- Customer opens http://localhost:3000
+- Enters their name in the call interface
+- Clicks "Start New Call"
+- System creates a unique call session and LiveKit room
 
-## 🔧 API Endpoints
+**2. Agent A Joins Automatically**
+- Backend automatically assigns Agent A to the call
+- Agent A interface shows connected status
+- Voice connection established via LiveKit WebRTC
 
-### Core Endpoints
+**3. Call Context Begins**
+- Call session ID created for tracking
+- Initial context logged: "Call started with customer [name]"
 
-- `POST /api/create-call` - Create new call session
-- `POST /api/initiate-transfer` - Start warm transfer process
-- `POST /api/complete-transfer` - Complete the transfer
-- `POST /api/add-context` - Add context to call session
-- `GET /api/call-status/{session_id}` - Get call status
+### Phase 2: Conversation and Context Capture
 
-### Optional Endpoints
+**4. Agent A Captures Real-Time Context**
+- Agent A uses the "Add Call Context" section during conversation
+- Examples of context input:
+  - "Customer has billing issue with payment declined"
+  - "Technical problem - React app not loading, 404 error"
+  - "Refund request for order #12345, damaged item"
+- Each context entry is timestamped and stored
+- Context appears in local history for Agent A to review
 
-- `POST /api/twilio-transfer` - Transfer to external phone
+**5. Context Storage**
+- All context sent to backend via `/api/add-context` endpoint
+- Backend stores context with session ID and speaker identification
+- Context used later for AI summary generation
 
-## 🧪 Testing
+### Phase 3: Transfer Decision and Initiation
 
-### Manual Testing
+**6. Agent A Decides to Transfer**
+- Agent A determines customer needs specialized help
+- In Transfer Panel, Agent A enters Agent B name (e.g., "Random")
+- Clicks "Initiate Transfer"
 
-1. **Single Browser Testing**
-   - Open multiple tabs to simulate different participants
-   - Use different names for caller, Agent A, and Agent B
+**7. Backend Processing**
+- Backend receives transfer request with session ID and Agent B ID
+- AI (Groq/OpenAI) generates comprehensive call summary from stored context
+- System creates private "transfer room" for agent briefing
+- Transfer notification created for Agent B
 
-2. **Multi-Device Testing**
-   - Use different devices/browsers for each participant
-   - Test audio quality and transfer functionality
+**8. Transfer Room Creation**
+- Unique transfer room created: `transfer_[session]_[random]`
+- Tokens generated for both agents to join transfer room
+- Agent A receives transfer room credentials
 
-### API Testing
+### Phase 4: Agent Briefing Phase
 
-\`\`\`bash
-# Test call creation
-curl -X POST http://localhost:8000/api/create-call \
-  -H "Content-Type: application/json" \
-  -d '{"caller_id": "test_caller"}'
+**9. Agent B Notification**
+- Agent B dashboard (http://localhost:3000/agent-b) polls for notifications every 2 seconds
+- System displays incoming transfer notification with orange alert
+- Notification includes:
+  - Transfer room ID
+  - Session information
+  - Timestamp
+  - "Accept Transfer" button
 
-# Test adding context
-curl -X POST http://localhost:8000/api/add-context \
-  -H "Content-Type: application/json" \
-  -d '{"session_id": "your_session_id", "message": "Customer needs help with billing"}'
-\`\`\`
+**10. Agents Join Transfer Room**
+- Agent B clicks "Accept Transfer" and joins private transfer room
+- Agent A also joins the same transfer room
+- Both agents now in private conversation (customer cannot hear)
 
-## 🐛 Troubleshooting
+**11. Context Sharing**
+- AI-generated call summary displayed to both agents
+- Summary includes:
+  - Customer name
+  - Main issues discussed
+  - Specific problems mentioned
+  - Current status and next steps needed
+- Agent A provides additional verbal context if needed
 
-### Common Issues
+### Phase 5: Transfer Completion
 
-1. **LiveKit Connection Failed**
-   - Ensure LiveKit server is running on port 7880
-   - Check WebSocket URL in configuration
-   - Verify API keys are correct
+**12. Agent A Completes Transfer**
+- When briefing is complete, Agent A clicks "Complete Transfer"
+- Backend generates token for Agent B to join original customer room
+- Completion notification sent to Agent B with customer room details
 
-2. **Audio Not Working**
-   - Check browser permissions for microphone
-   - Ensure HTTPS in production (required for WebRTC)
-   - Test with different browsers
+**13. Automatic Agent B Connection**
+- Agent B automatically connects to customer room
+- Agent B interface shows "Customer Call Active" status
+- Voice connection established between Agent B and customer
+- Call timer starts for Agent B
 
-3. **LLM Integration Issues**
-   - Verify API keys are valid and have credits
-   - Check network connectivity
-   - Review API rate limits
+**14. Agent A Graceful Exit**
+- Agent A can leave customer room (customer continues with Agent B)
+- Original call session marked as "transferred"
+- Agent A's work is complete
 
-4. **Twilio Integration Problems**
-   - Verify account SID and auth token
-   - Ensure phone number is verified
-   - Check Twilio account balance
+### Phase 6: Continued Customer Support
 
-### Debug Mode
+**15. Agent B Takes Over**
+- Agent B now handles customer conversation
+- Full context available from AI summary
+- Customer experiences seamless transition
+- Agent B can add additional context if needed
 
-Enable debug logging in backend:
-\`\`\`python
-import logging
-logging.basicConfig(level=logging.DEBUG)
-\`\`\`
+**16. Call Resolution**
+- Agent B resolves customer issue
+- Agent B can end call when complete, or
+- Customer can end call themselves
+- Session marked as completed
 
-## 🔒 Security Considerations
+### Phase 7: Optional External Transfer (Twilio)
 
-1. **API Keys**: Never commit API keys to version control
-2. **HTTPS**: Use HTTPS in production for WebRTC
-3. **Token Validation**: LiveKit tokens have expiration times
-4. **CORS**: Configure CORS properly for production
-5. **Rate Limiting**: Implement rate limiting for API endpoints
+**17. Transfer to External Phone (Optional)**
+- If needed, Agent A or B can transfer to external phone number
+- Enter phone number in "Transfer to Phone" section
+- Click "Transfer via Twilio"
+- System calls external number and plays AI-generated summary
 
-## 🚀 Deployment
+### Technical Flow Details
 
-### Backend Deployment
+**API Calls During Transfer:**
+1. `POST /api/create-call` - Create initial session
+2. `POST /api/add-context` - Add conversation context (multiple times)
+3. `POST /api/initiate-transfer` - Start transfer process
+4. `GET /api/notifications/{agent_id}` - Agent B polls for notifications
+5. `POST /api/complete-transfer` - Complete the handoff
+6. `POST /api/agent-exit-room` - Agent A leaves customer room
 
-1. **Using Docker**
-\`\`\`bash
-cd backend
-docker build -t warm-transfer-backend .
-docker run -p 8000:8000 --env-file .env warm-transfer-backend
-\`\`\`
+**LiveKit Room Flow:**
+1. **Customer Room:** `call_[random]` - Customer + Agent A initially
+2. **Transfer Room:** `transfer_[session]_[random]` - Agent A + Agent B briefing  
+3. **Customer Room:** `call_[random]` - Customer + Agent B finally
 
-2. **Using Heroku/Railway/Render**
-   - Set environment variables in platform
-   - Deploy using git or Docker
+**Data Flow:**
+- Context stored in backend memory with session ID
+- AI processes context into readable summary
+- Notifications stored per agent ID for polling
+- Session state tracked throughout transfer process
 
-### Frontend Deployment
+### Error Handling
 
-1. **Vercel (Recommended)**
-\`\`\`bash
-cd frontend
-npm run build
-vercel --prod
-\`\`\`
+**Common Scenarios:**
+- **Agent B Offline:** Transfer notification persists until Agent B comes online
+- **Connection Loss:** Participants can rejoin using same tokens
+- **Transfer Timeout:** Transfer can be retried with same context
+- **Customer Disconnects:** Both agents notified, session ended
 
-2. **Netlify**
-\`\`\`bash
-cd frontend
-npm run build
-# Deploy dist folder to Netlify
-\`\`\`
+**Recovery Mechanisms:**
+- Session state preserved in backend memory
+- Room tokens remain valid for reconnection
+- Context preserved even if transfer fails
+- Manual reset available via Agent B "Reset" button
 
-### LiveKit Production
-
-For production, use LiveKit Cloud or deploy your own LiveKit server:
-- [LiveKit Cloud](https://cloud.livekit.io)
-- [Self-hosted deployment](https://docs.livekit.io/deploy/)
-
-## 📊 Monitoring & Analytics
-
-### Metrics to Track
-
-1. **Call Metrics**
-   - Total calls initiated
-   - Successful transfers
-   - Transfer completion rate
-   - Average call duration
-
-2. **Performance Metrics**
-   - API response times
-   - WebRTC connection quality
-   - LLM response times
-
-3. **Error Tracking**
-   - Failed connections
-   - Transfer failures
-   - API errors
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create feature branch: `git checkout -b feature/new-feature`
-3. Commit changes: `git commit -am 'Add new feature'`
-4. Push to branch: `git push origin feature/new-feature`
-5. Submit pull request
-
-## 📄 License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-## 🆘 Support
-
-For support and questions:
-1. Check the troubleshooting section
-2. Review LiveKit documentation: [docs.livekit.io](https://docs.livekit.io)
-3. Open an issue on GitHub
-4. Contact the development team
-
-## 🔮 Future Enhancements
-
-- [ ] Multi-language support
-- [ ] Video calling support
-- [ ] Call recording functionality
-- [ ] Advanced analytics dashboard
-- [ ] Mobile app support
-- [ ] Integration with CRM systems
-- [ ] Advanced AI features (sentiment analysis, etc.)
+This workflow ensures customers receive uninterrupted service while agents maintain complete context throughout the handoff process.

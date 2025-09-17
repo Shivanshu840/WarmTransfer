@@ -3,7 +3,8 @@
 import { useState, useCallback, useEffect, useRef } from "react"
 import { Button } from "./ui/Button"
 import { Input } from "./ui/Input"
-import { Phone, PhoneOff, Mic, MicOff, Volume2, Copy, Users } from "lucide-react"
+import { Card } from "./ui/Card"
+import { Phone, PhoneOff, Mic, MicOff, Volume2, Copy, Users, MessageSquare, Send } from "lucide-react"
 import { apiService } from "../lib/api"
 import { AudioInterface } from "./AudioInterace"
 import type { CallSession, TransferState } from "../types"
@@ -24,6 +25,11 @@ export function CallInterface({ onCallStart, onTransferStateChange, onCallEnd }:
   const [callDuration, setCallDuration] = useState(0)
   const [showJoinRoom, setShowJoinRoom] = useState(false)
   const [roomIdToJoin, setRoomIdToJoin] = useState("")
+  
+  // Context tracking states
+  const [contextInput, setContextInput] = useState("")
+  const [contextHistory, setContextHistory] = useState<string[]>([])
+  const [isAddingContext, setIsAddingContext] = useState(false)
 
   const [room, setRoom] = useState<Room | null>(null)
   const [audioTrack, setAudioTrack] = useState<LocalAudioTrack | null>(null)
@@ -45,6 +51,39 @@ export function CallInterface({ onCallStart, onTransferStateChange, onCallEnd }:
     const mins = Math.floor(seconds / 60)
     const secs = seconds % 60
     return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`
+  }
+
+  const addCallContext = useCallback(async () => {
+    if (!callData?.session_id || !contextInput.trim()) {
+      return
+    }
+
+    setIsAddingContext(true)
+    try {
+      await apiService.addContext(
+        callData.session_id,
+        contextInput.trim(),
+        "Agent A"
+      )
+      
+      // Add to local context history
+      setContextHistory(prev => [...prev, `${new Date().toLocaleTimeString()}: ${contextInput.trim()}`])
+      setContextInput("")
+      
+      console.log("[v0] Context added successfully:", contextInput.trim())
+    } catch (error) {
+      console.error("[v0] Failed to add context:", error)
+      alert("Failed to add context. Please try again.")
+    } finally {
+      setIsAddingContext(false)
+    }
+  }, [callData?.session_id, contextInput])
+
+  const handleContextKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      addCallContext()
+    }
   }
 
   const startCall = useCallback(async () => {
@@ -89,6 +128,7 @@ export function CallInterface({ onCallStart, onTransferStateChange, onCallEnd }:
       onCallStart(response)
       setIsConnected(true)
       setCallDuration(0)
+      setContextHistory([]) // Reset context history for new call
       onTransferStateChange("idle")
 
       try {
@@ -171,6 +211,7 @@ export function CallInterface({ onCallStart, onTransferStateChange, onCallEnd }:
       onCallStart(response)
       setIsConnected(true)
       setCallDuration(0)
+      setContextHistory([]) // Reset context history
       onTransferStateChange("idle")
       setShowJoinRoom(false)
       setRoomIdToJoin("")
@@ -230,6 +271,7 @@ export function CallInterface({ onCallStart, onTransferStateChange, onCallEnd }:
     setIsConnected(false)
     setCallData(null)
     setCallDuration(0)
+    setContextHistory([])
     onCallStart(null)
     onTransferStateChange("idle")
     onCallEnd?.()
@@ -348,6 +390,52 @@ export function CallInterface({ onCallStart, onTransferStateChange, onCallEnd }:
 
         <p className="text-sm text-gray-500 dark:text-gray-400">Duration: {formatDuration(callDuration)}</p>
       </div>
+
+      {/* Context Input Section - NEW */}
+      <Card className="p-4 bg-blue-50 dark:bg-blue-900/20">
+        <div className="flex items-center gap-2 mb-3">
+          <MessageSquare className="w-4 h-4 text-blue-600" />
+          <h4 className="font-medium text-blue-900 dark:text-blue-100">Add Call Context</h4>
+          <span className="text-xs text-blue-700 dark:text-blue-300 ml-auto">For Agent B</span>
+        </div>
+        
+        <div className="space-y-3">
+          <div className="flex gap-2">
+            <Input
+              placeholder="e.g., Customer has billing issue with payment declined, needs refund for order #12345..."
+              value={contextInput}
+              onChange={(e) => setContextInput(e.target.value)}
+              onKeyPress={handleContextKeyPress}
+              className="flex-1"
+              disabled={isAddingContext}
+            />
+            <Button 
+              onClick={addCallContext}
+              disabled={!contextInput.trim() || isAddingContext}
+              size="sm"
+            >
+              {isAddingContext ? (
+                <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-white" />
+              ) : (
+                <Send className="w-3 h-3" />
+              )}
+            </Button>
+          </div>
+          
+          {contextHistory.length > 0 && (
+            <div className="bg-white dark:bg-gray-800 rounded p-2 max-h-20 overflow-y-auto">
+              <p className="text-xs text-gray-500 mb-1">Context added:</p>
+              {contextHistory.slice(-3).map((context, index) => (
+                <p key={index} className="text-xs text-gray-700 dark:text-gray-300 mb-1">{context}</p>
+              ))}
+            </div>
+          )}
+        </div>
+        
+        <p className="text-xs text-blue-600 dark:text-blue-400 mt-2">
+          💡 Add customer issues, requests, and important details during the call for better transfer context
+        </p>
+      </Card>
 
       <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-6 text-center">
         <div className="flex items-center justify-center mb-4">
