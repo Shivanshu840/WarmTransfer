@@ -388,7 +388,11 @@ async def complete_transfer(request: dict):
         original_room = call_session["room_name"]
         agent_b_id = call_session["agent_b"]
         
-        agent_b_original_token = livekit_service.generate_token(original_room, agent_b_id, admin_permissions=True)
+        agent_b_original_token = livekit_service.generate_token(
+            original_room, 
+            agent_b_id, 
+            admin_permissions=False  # Use regular permissions, not admin
+        )
         
         # Update session status
         transfer_manager.active_calls[session_id]["status"] = "transferred"
