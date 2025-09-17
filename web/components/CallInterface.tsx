@@ -106,9 +106,8 @@ export function CallInterface({ onCallStart, onTransferStateChange, onCallEnd }:
     if (callData?.room_name) {
       try {
         await navigator.clipboard.writeText(callData.room_name)
-        alert("Room ID copied to clipboard!")
+        
       } catch (error) {
-        console.error("[v0] Failed to copy room ID:", error)
         alert(`Room ID: ${callData.room_name}`)
       }
     }
