@@ -244,9 +244,18 @@ The warm transfer process allows Agent A to seamlessly hand off a customer call 
 - In Transfer Panel, Agent A enters Agent B name (e.g., "Random")
 - Clicks "Initiate Transfer"
 
-**7. Backend Processing**
+**7. Backend Processing and AI Summary Generation**
 - Backend receives transfer request with session ID and Agent B ID
-- AI (Groq/OpenAI) generates comprehensive call summary from stored context
+- **LLM GENERATES CONTEXT HERE:** Backend calls `/api/initiate-transfer` endpoint
+- System retrieves all stored context from the call session
+- LLM (Groq/OpenAI) processes the context using this prompt:
+  ```
+  "You are an AI assistant that creates concise call summaries for warm transfers. 
+  Summarize the key points, customer needs, and context that would be helpful 
+  for the next agent."
+  ```
+- AI generates comprehensive call summary from all captured context
+- Generated summary stored in call session data
 - System creates private "transfer room" for agent briefing
 - Transfer notification created for Agent B
 
