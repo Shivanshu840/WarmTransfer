@@ -163,7 +163,6 @@ export function AgentBInterface({ onJoinTransfer, onJoinCustomerCall }: AgentBIn
       await newRoom.localParticipant.publishTrack(track, {
         name: "microphone",
         source: Track.Source.Microphone,
-        audioBitrate: 20_000,
       })
 
       setCustomerRoom(newRoom)
