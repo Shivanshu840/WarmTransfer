@@ -156,9 +156,23 @@ export function AgentBInterface({ onJoinTransfer, onJoinCustomerCall }: AgentBIn
         autoGainControl: true,
       })
 
+      console.log(
+        "[v0] Connecting to customer room:",
+        originalRoom,
+        "with token:",
+        customerToken.substring(0, 20) + "...",
+      )
+
       await newRoom.connect(process.env.NEXT_PUBLIC_LIVEKIT_URL || "ws://localhost:7880", customerToken, {
-        autoSubscribe: true,
-      })
+  autoSubscribe: true,
+})
+
+await newRoom.localParticipant.publishTrack(track, {
+  name: "microphone",
+  source: Track.Source.Microphone,
+  dtx: false,
+  red: false,
+})
 
       await newRoom.localParticipant.publishTrack(track, {
         name: "microphone",
@@ -183,7 +197,11 @@ export function AgentBInterface({ onJoinTransfer, onJoinCustomerCall }: AgentBIn
     } catch (error) {
       console.error("[v0] Failed to connect to customer room:", error)
       setConnectionStatus("listening")
-      alert(`Failed to connect to customer room: ${error instanceof Error ? error.message : "Unknown error"}`)
+
+      const errorMessage = error instanceof Error ? error.message : "Unknown error"
+      alert(
+        `Failed to connect to customer room: ${errorMessage}\n\nRoom: ${originalRoom}\nToken: ${customerToken ? "Present" : "Missing"}`,
+      )
     }
 
     onJoinCustomerCall(originalRoom, customerToken)
