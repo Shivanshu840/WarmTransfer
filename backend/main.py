@@ -153,7 +153,7 @@ class LiveKitService:
             # Return mock room for development
             return {"room_name": room_name, "sid": f"mock_sid_{uuid.uuid4().hex[:8]}"}
     
-    def generate_token(self, room_name: str, participant_name: str) -> str:
+    def generate_token(self, room_name: str, participant_name: str, admin_permissions: bool = False) -> str:
         """Generate access token for LiveKit room"""
         if not LIVEKIT_API_KEY or not LIVEKIT_API_SECRET:
             logger.warning("LiveKit credentials not configured, returning mock token")
@@ -162,12 +162,21 @@ class LiveKitService:
         token = AccessToken(LIVEKIT_API_KEY, LIVEKIT_API_SECRET)
         token.with_identity(participant_name)
         token.with_name(participant_name)
-        token.with_grants(VideoGrants(
+        
+        grants = VideoGrants(
             room_join=True,
             room=room_name,
             can_publish=True,
             can_subscribe=True,
-        ))
+            can_publish_data=True,
+            can_update_own_metadata=True
+        )
+        
+        if admin_permissions:
+            grants.room_admin = True
+            grants.room_create = True
+            
+        token.with_grants(grants)
         return token.to_jwt()
     
     async def list_participants(self, room_name: str) -> List[dict]:
@@ -379,8 +388,7 @@ async def complete_transfer(request: dict):
         original_room = call_session["room_name"]
         agent_b_id = call_session["agent_b"]
         
-        # Generate token for Agent B to join original room
-        agent_b_original_token = livekit_service.generate_token(original_room, agent_b_id)
+        agent_b_original_token = livekit_service.generate_token(original_room, agent_b_id, admin_permissions=True)
         
         # Update session status
         transfer_manager.active_calls[session_id]["status"] = "transferred"
@@ -419,13 +427,15 @@ async def add_context(request: dict):
     try:
         session_id = request.get("session_id")
         message = request.get("message")
+        speaker = request.get("speaker", "Unknown")  # Added speaker identification
         
         if not session_id or not message:
             raise HTTPException(status_code=400, detail="Missing session_id or message")
         
-        llm_service.add_context(session_id, message)
+        formatted_message = f"[{datetime.now().strftime('%H:%M:%S')}] {speaker}: {message}"
+        llm_service.add_context(session_id, formatted_message)
         
-        return {"message": "Context added successfully"}
+        return {"message": "Context added successfully", "formatted_message": formatted_message}
         
     except Exception as e:
         logger.error(f"Failed to add context: {e}")
