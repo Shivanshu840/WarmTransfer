@@ -385,6 +385,11 @@ async def complete_transfer(request: dict):
             raise HTTPException(status_code=404, detail="Call session not found")
         
         call_session = transfer_manager.active_calls[session_id]
+        
+        # Check if call is still active
+        if call_session.get("status") == "ended":
+            raise HTTPException(status_code=400, detail="Cannot complete transfer - call has ended")
+        
         original_room = call_session["room_name"]
         agent_b_id = call_session["agent_b"]
         
@@ -402,16 +407,19 @@ async def complete_transfer(request: dict):
             "session_id": session_id,
             "agent_b_id": agent_b_id,
             "original_room": original_room,
-            "customer_token": agent_b_original_token,
+            "customer_token": agent_b_original_token,  # This is the key field Agent B needs
             "timestamp": datetime.now().isoformat(),
             "message": f"Transfer completed! Join customer room: {original_room}"
         }
         
-        # Store completion notification for Agent B
+        # Store completion notification for Agent B to poll
         if agent_b_id not in transfer_manager.notifications:
             transfer_manager.notifications[agent_b_id] = []
         
         transfer_manager.notifications[agent_b_id].append(completion_notification)
+        
+        # Log for debugging
+        logger.info(f"Added completion notification for agent {agent_b_id}: {completion_notification}")
         
         return {
             "agent_b_original_token": agent_b_original_token,
@@ -572,7 +580,13 @@ async def get_notifications(agent_id: str):
     """Get pending notifications for an agent"""
     notifications = transfer_manager.notifications.get(agent_id, [])
     
-    # Clear notifications after retrieving
+    # Log for debugging - but don't clear notifications immediately
+    if notifications:
+        logger.info(f"Found {len(notifications)} notifications for agent {agent_id}")
+        for notif in notifications:
+            logger.info(f"Notification type: {notif.get('type')}, session: {notif.get('session_id')}")
+    
+    # Clear notifications after returning them to prevent duplicate processing
     if agent_id in transfer_manager.notifications:
         transfer_manager.notifications[agent_id] = []
     
